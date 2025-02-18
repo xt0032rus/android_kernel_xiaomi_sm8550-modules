@@ -5442,6 +5442,77 @@ static int fts_mode_handler(struct fts_ts_info *info, int force)
 }
 
 #ifdef FTS_XIAOMI_TOUCHFEATURE
+static void fts_set_grip_rect(int *buf)
+{
+	u8 gesture_cmd[12] = {0xC0, 0x0C};
+	int ret = 0;
+
+	// Extract values from buffer
+	int type = *buf;
+	int pos = *(buf + 1);
+	int x_start = *(buf + 2);
+	int y_start = *(buf + 3);
+	int x_end = *(buf + 4);
+	int y_end = *(buf + 5);
+
+	// Log the extracted data for debugging
+	logError(1, "%s set cmd:0x%x 0x%x grip_type:%d, grip_pos:%d,x_start:%d,y_start:%d,x_end:%d,y_end:%d\n", 
+			tag, gesture_cmd[0], gesture_cmd[1], type, pos, x_start, y_start, x_end, y_end);
+
+	// Fill in the gesture_cmd array with the correct values
+	gesture_cmd[2] = type;
+	gesture_cmd[3] = pos;
+	gesture_cmd[4] = (x_start & 0xff);
+	gesture_cmd[5] = ((x_start >> 8) & 0xff);
+	gesture_cmd[6] = (y_start & 0xff);
+	gesture_cmd[7] = ((y_start >> 8) & 0xff);
+	gesture_cmd[8] = (x_end & 0xff);
+	gesture_cmd[9] = ((x_end >> 8) & 0xff);
+	gesture_cmd[10] = (y_end & 0xff);
+	gesture_cmd[11] = ((y_end >> 8) & 0xff);
+
+	// Write the command to the DMA buffer
+	ret = fts_write_dma_safe(gesture_cmd, sizeof(gesture_cmd));
+	if (ret < OK)
+		logError(1, "%s %s: set grip mode error\n", tag, __func__);
+}
+
+static void fts_deadzone_rejection(struct fts_hw_platform_data *bdata)
+{
+	int i;
+
+	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+				i += GRIP_PARAMETER_NUM)
+		fts_set_grip_rect((int *)&(bdata->deadzone_filter_ver[i]));
+}
+
+static void fts_edge_rejection(struct fts_hw_platform_data *bdata)
+{
+	int i;
+
+	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+				i += GRIP_PARAMETER_NUM)
+		fts_set_grip_rect((int *)&(bdata->edgezone_filter_ver[i]));
+}
+
+static void fts_corner_rejection(struct fts_hw_platform_data *bdata)
+{
+	int i;
+
+	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+				i += GRIP_PARAMETER_NUM)
+		fts_set_grip_rect((int *)&(bdata->cornerzone_filter_ver[i]));
+}
+
+static void fts_update_grip_mode(struct fts_ts_info *fts_info)
+{
+	struct fts_hw_platform_data *bdata = fts_info->board;
+
+	fts_deadzone_rejection(bdata);
+	fts_edge_rejection(bdata);
+	fts_corner_rejection(bdata);
+}
+
 static int fts_set_cur_value(void *private, enum touch_mode mode, int value)
 {
 	struct fts_ts_info *fts_info = private;
@@ -5622,6 +5693,9 @@ static void fts_resume_work(struct work_struct *work)
 	if (info->reprot_rate >= 0) {
 		fts_set_report_rate(info, info->reprot_rate);
 	}
+#ifdef FTS_XIAOMI_TOUCHFEATURE
+	fts_update_grip_mode(info);
+#endif
 	if (info->enable_touch_raw) {
 		fts_up_interrups_mode(info, 1);
 	}
@@ -6314,6 +6388,64 @@ err_pinctrl_get:
 	return retval;
 }
 
+static int parse_gripmode_dt(struct device *dev,
+			     struct fts_hw_platform_data *bdata)
+{
+	struct device_node *np = dev->of_node;
+	int byte_len = 0, retval = 0;
+
+	if (of_find_property(np, "fts,touch-deadzone-filter-ver", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag,
+				 __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(
+			np, "fts,touch-deadzone-filter-ver",
+			bdata->deadzone_filter_ver, byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1,
+				 "%s %s parse for deadzone filter ver error\n",
+				 tag, __func__);
+			return retval;
+		}
+	}
+
+	if (of_find_property(np, "fts,touch-edgezone-filter-ver", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag,
+				 __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(
+			np, "fts,touch-edgezone-filter-ver",
+			bdata->edgezone_filter_ver, byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1,
+				 "%s %s parse for edgezone filter ver error\n",
+				 tag, __func__);
+			return retval;
+		}
+	}
+
+	if (of_find_property(np, "fts,touch-cornerzone-filter-ver", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(np,
+				"fts,touch-cornerzone-filter-ver",
+				bdata->cornerzone_filter_ver,
+				byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1, "%s %s parse for cornerzone filter ver error\n", tag, __func__);
+			return retval;
+		}
+	}
+
+	return retval;
+}
+
 /**
  * Retrieve and parse the hw information from the device tree node defined in the system.
  * the most important information to obtain are: IRQ and RESET gpio numbers, power regulator names
@@ -6427,9 +6559,12 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 		logError(1, "%s support super resolution: %d\n", tag,
 			 bdata->support_super_resolution);
 
+	retval = parse_gripmode_dt(dev, bdata);
+	if (retval < 0)
+		logError(1, "%s Unable to parse grip mode parameters\n", tag);
+
 	retval = of_property_read_u32(np, "fts,config-array-size",
 				      (u32 *)&bdata->config_array_size);
-
 	if (retval) {
 		logError(1, "%s Unable to get array size\n", tag);
 		return retval;
