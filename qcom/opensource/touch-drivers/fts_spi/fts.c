@@ -5477,40 +5477,94 @@ static void fts_set_grip_rect(int *buf)
 		logError(1, "%s %s: set grip mode error\n", tag, __func__);
 }
 
-static void fts_deadzone_rejection(struct fts_hw_platform_data *bdata)
+static void fts_deadzone_rejection(struct fts_hw_platform_data *bdata, int orientation)
 {
 	int i;
 
-	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
-				i += GRIP_PARAMETER_NUM)
-		fts_set_grip_rect((int *)&(bdata->deadzone_filter_ver[i]));
+	switch (orientation) {
+		case 1:
+		case 3:
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->deadzone_filter_hor[i]));
+			break;
+		default:
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->deadzone_filter_ver[i]));
+	}
 }
 
-static void fts_edge_rejection(struct fts_hw_platform_data *bdata)
+static void fts_edge_rejection(struct fts_hw_platform_data *bdata, int orientation)
 {
 	int i;
 
-	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
-				i += GRIP_PARAMETER_NUM)
-		fts_set_grip_rect((int *)&(bdata->edgezone_filter_ver[i]));
+	switch (orientation) {
+		case 1:
+		case 3:
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->edgezone_filter_hor[i]));
+			break;
+		default:
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->edgezone_filter_ver[i]));
+	}
 }
 
-static void fts_corner_rejection(struct fts_hw_platform_data *bdata)
+static void fts_corner_rejection(struct fts_hw_platform_data *bdata, int orientation)
 {
 	int i;
+	int filter_value = bdata->cornerfilter_area_step2; // default value as seen on miui
 
-	for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
-				i += GRIP_PARAMETER_NUM)
-		fts_set_grip_rect((int *)&(bdata->cornerzone_filter_ver[i]));
+	switch (orientation) {
+		case 1:
+			bdata->cornerzone_filter_hor1[4] = filter_value;
+			bdata->cornerzone_filter_hor1[5] = filter_value;
+			if (!bdata->support_super_resolution) {
+				bdata->cornerzone_filter_hor1[GRIP_PARAMETER_NUM * 2 + 3] = bdata->y_max - filter_value - 1;
+			} else {
+				bdata->cornerzone_filter_hor1[GRIP_PARAMETER_NUM * 2 + 3] = bdata->y_max / 10 - filter_value - 1;
+			}
+			bdata->cornerzone_filter_hor1[GRIP_PARAMETER_NUM * 2 + 4] = filter_value;
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect(
+					(int *)&(bdata->cornerzone_filter_hor1[i]));
+			break;
+		case 3:
+			if (!bdata->support_super_resolution) {
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM + 2] = bdata->x_max - filter_value - 1;
+			} else {
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM + 2] = bdata->x_max / 10 - filter_value - 1;
+			}
+			bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM + 5] = filter_value;
+			if (!bdata->support_super_resolution) {
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM * 3 + 2] = bdata->x_max - filter_value - 1;
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM * 3 + 3] = bdata->y_max - filter_value - 1;
+			} else {
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM * 3 + 2] = bdata->x_max / 10 - filter_value - 1;
+				bdata->cornerzone_filter_hor2[GRIP_PARAMETER_NUM * 3 + 3] = bdata->y_max / 10 - filter_value - 1;
+			}
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->cornerzone_filter_hor2[i]));
+			break;
+		default:
+			for (i = 0; i < GRIP_RECT_NUM * GRIP_PARAMETER_NUM / 3;
+						i += GRIP_PARAMETER_NUM)
+				fts_set_grip_rect((int *)&(bdata->cornerzone_filter_ver[i]));
+	}
 }
 
-static void fts_update_grip_mode(struct fts_ts_info *fts_info)
+static void fts_update_grip_mode(struct fts_ts_info *fts_info, int orientation)
 {
 	struct fts_hw_platform_data *bdata = fts_info->board;
 
-	fts_deadzone_rejection(bdata);
-	fts_edge_rejection(bdata);
-	fts_corner_rejection(bdata);
+	fts_deadzone_rejection(bdata, orientation);
+	fts_edge_rejection(bdata, orientation);
+	fts_corner_rejection(bdata, orientation);
 }
 
 static int fts_set_cur_value(void *private, enum touch_mode mode, int value)
@@ -5533,6 +5587,10 @@ static int fts_set_cur_value(void *private, enum touch_mode mode, int value)
 		break;
 	case TOUCH_MODE_REPORT_RATE:
 		fts_set_report_rate(fts_info, value);
+		goto exit;
+	case TOUCH_MODE_ORIENTATION:
+		fts_info->orientation = value;
+		fts_update_grip_mode(fts_info, value);
 		goto exit;
 	default:
 		logError(1,
@@ -5694,7 +5752,7 @@ static void fts_resume_work(struct work_struct *work)
 		fts_set_report_rate(info, info->reprot_rate);
 	}
 #ifdef FTS_XIAOMI_TOUCHFEATURE
-	fts_update_grip_mode(info);
+	fts_update_grip_mode(info, info->orientation);
 #endif
 	if (info->enable_touch_raw) {
 		fts_up_interrups_mode(info, 1);
@@ -6393,6 +6451,25 @@ static int parse_gripmode_dt(struct device *dev,
 {
 	struct device_node *np = dev->of_node;
 	int byte_len = 0, retval = 0;
+	u32 temp_val;
+
+	retval = of_property_read_u32(np, "fts,cornerfilter-area-step1", &temp_val);
+	if (retval < 0)
+		return retval;
+	else
+		bdata->cornerfilter_area_step1 = temp_val;
+
+	retval = of_property_read_u32(np, "fts,cornerfilter-area-step2", &temp_val);
+	if (retval < 0)
+		return retval;
+	else
+		bdata->cornerfilter_area_step2 = temp_val;
+
+	retval = of_property_read_u32(np, "fts,cornerfilter-area-step3", &temp_val);
+	if (retval < 0)
+		return retval;
+	else
+		bdata->cornerfilter_area_step3 = temp_val;
 
 	if (of_find_property(np, "fts,touch-deadzone-filter-ver", &byte_len)) {
 		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
@@ -6407,6 +6484,21 @@ static int parse_gripmode_dt(struct device *dev,
 			logError(1,
 				 "%s %s parse for deadzone filter ver error\n",
 				 tag, __func__);
+			return retval;
+		}
+	}
+
+	if (of_find_property(np, "fts,touch-deadzone-filter-hor", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(np,
+				"fts,touch-deadzone-filter-hor",
+				bdata->deadzone_filter_hor,
+				byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1, "%s %s parse for deadzone filter hor error\n", tag, __func__);
 			return retval;
 		}
 	}
@@ -6428,6 +6520,21 @@ static int parse_gripmode_dt(struct device *dev,
 		}
 	}
 
+	if (of_find_property(np, "fts,touch-edgezone-filter-hor", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(np,
+				"fts,touch-edgezone-filter-hor",
+				bdata->edgezone_filter_hor,
+				byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1, "%s %s parse for edgezone filter hor error\n", tag, __func__);
+			return retval;
+		}
+	}
+
 	if (of_find_property(np, "fts,touch-cornerzone-filter-ver", &byte_len)) {
 		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
 			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
@@ -6439,6 +6546,36 @@ static int parse_gripmode_dt(struct device *dev,
 				byte_len / sizeof(u32));
 		if (retval < 0) {
 			logError(1, "%s %s parse for cornerzone filter ver error\n", tag, __func__);
+			return retval;
+		}
+	}
+
+	if (of_find_property(np, "fts,touch-cornerzone-filter-hor1", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(np,
+				"fts,touch-cornerzone-filter-hor1",
+				bdata->cornerzone_filter_hor1,
+				byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1, "%s %s parse for cornerzone filter hor1 error\n", tag, __func__);
+			return retval;
+		}
+	}
+
+	if (of_find_property(np, "fts,touch-cornerzone-filter-hor2", &byte_len)) {
+		if ((byte_len / sizeof(u32)) != (GRIP_PARAMETER_NUM * 4)) {
+			logError(1, "%s %s parameters len in dts is wrong", tag, __func__);
+			return retval;
+		}
+		retval = of_property_read_u32_array(np,
+				"fts,touch-cornerzone-filter-hor2",
+				bdata->cornerzone_filter_hor2,
+				byte_len / sizeof(u32));
+		if (retval < 0) {
+			logError(1, "%s %s parse for cornerzone filter hor2 error\n", tag, __func__);
 			return retval;
 		}
 	}
