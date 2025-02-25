@@ -428,10 +428,12 @@ static ssize_t touch_mode_store(struct device *dev,
 
 TOUCH_MODE_ATTR_RW(bump_sample_rate, TOUCH_MODE_REPORT_RATE);
 TOUCH_MODE_ATTR_RW(fod_finger_state, TOUCH_MODE_FOD_FINGER_STATE);
+TOUCH_MODE_ATTR_RW(panel_orientation, TOUCH_MODE_ORIENTATION);
 
 static struct attribute *touch_mode_attrs[] = {
 	&touch_mode_attr_bump_sample_rate.dev_attr.attr,
 	&touch_mode_attr_fod_finger_state.dev_attr.attr,
+	&touch_mode_attr_panel_orientation.dev_attr.attr,
 	NULL,
 };
 
