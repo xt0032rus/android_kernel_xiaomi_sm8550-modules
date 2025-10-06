@@ -5558,13 +5558,35 @@ static void fts_corner_rejection(struct fts_hw_platform_data *bdata, int orienta
 	}
 }
 
+static void fts_clear_grip_rejection(void)
+{
+    int i;
+    int clear_params[GRIP_PARAMETER_NUM] = {0};
+
+    logError(1, "%s Clearing all grip rejection zones\n", tag);
+    for (i = 0; i < GRIP_RECT_NUM; i++) {
+        clear_params[1] = i; // Position index
+
+        // Clear deadzone (type 0), edge (type 1), and corner (type 2)
+        clear_params[0] = 0; fts_set_grip_rect(clear_params);
+        clear_params[0] = 1; fts_set_grip_rect(clear_params);
+        clear_params[0] = 2; fts_set_grip_rect(clear_params);
+    }
+}
+
 static void fts_update_grip_mode(struct fts_ts_info *fts_info, int orientation)
 {
-	struct fts_hw_platform_data *bdata = fts_info->board;
+    struct fts_hw_platform_data *bdata = fts_info->board;
 
-	fts_deadzone_rejection(bdata, orientation);
-	fts_edge_rejection(bdata, orientation);
-	fts_corner_rejection(bdata, orientation);
+    if (fts_info->grip_rejection_enabled) {
+        logError(1, "%s Applying grip rejection filters\n", tag);
+        fts_deadzone_rejection(bdata, orientation);
+        fts_edge_rejection(bdata, orientation);
+        fts_corner_rejection(bdata, orientation);
+    } else {
+        logError(1, "%s Clearing grip rejection filters\n", tag);
+        fts_clear_grip_rejection();
+    }
 }
 
 static int fts_set_cur_value(void *private, enum touch_mode mode, int value)
@@ -5592,17 +5614,21 @@ static int fts_set_cur_value(void *private, enum touch_mode mode, int value)
 		fts_info->orientation = value;
 		fts_update_grip_mode(fts_info, value);
 		goto exit;
-	default:
-		logError(1,
-			 "handler got mode %d with value %d, not implemented",
-			 mode, value);
-		return -EINVAL;
-	}
+    case TOUCH_MODE_GRIP_REJECTION:
+        fts_info->grip_rejection_enabled = !!value;
+        fts_update_grip_mode(fts_info, fts_info->orientation);
+        goto exit;
+    default:
+        logError(1,
+             "handler got mode %d with value %d, not implemented",
+             mode, value);
+        return -EINVAL;
+    }
 
-	schedule_work(&fts_info->switch_mode_work);
+    schedule_work(&fts_info->switch_mode_work);
 
 exit:
-	return 0;
+    return 0;
 }
 
 static int fts_get_mode_value(void *private, enum touch_mode mode)
@@ -5619,11 +5645,17 @@ static int fts_get_mode_value(void *private, enum touch_mode mode)
 		return fts_info->fod_longpress_gesture_enabled;
 	case TOUCH_MODE_NONUI_MODE:
 		return fts_info->nonui_status;
-	default:
-		logError(1, "handler got mode %d, not implemented", mode);
-		return -EINVAL;
-	}
-	return 0;
+	case TOUCH_MODE_REPORT_RATE:
+		return fts_info->reprot_rate;
+	case TOUCH_MODE_ORIENTATION:
+		return fts_info->orientation;
+    case TOUCH_MODE_GRIP_REJECTION:
+        return fts_info->grip_rejection_enabled;
+    default:
+        logError(1, "handler got mode %d, not implemented", mode);
+        return -EINVAL;
+    }
+    return 0;
 }
 #endif
 
@@ -7688,6 +7720,7 @@ static int fts_probe(struct spi_device *client)
 	info->charger_enabled = 0;
 	info->cover_enabled = 0;
 	info->grip_enabled = 0;
+	info->grip_rejection_enabled = true;
 	info->grip_pixel_def = 30;
 	info->grip_pixel = info->grip_pixel_def;
 

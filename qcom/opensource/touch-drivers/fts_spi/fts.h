@@ -415,6 +415,7 @@ struct fts_ts_info {
 	int stylus_enabled;
 	int cover_enabled;
 	unsigned int grip_enabled;
+	bool grip_rejection_enabled;
 	unsigned int grip_pixel;
 	unsigned int doze_time;
 	unsigned int grip_pixel_def;
