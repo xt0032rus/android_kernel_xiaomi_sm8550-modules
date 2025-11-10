@@ -1442,6 +1442,19 @@ int dsi_display_set_power(struct drm_connector *connector,
 		if ((display->panel->power_mode == SDE_MODE_DPMS_LP1) ||
 			(display->panel->power_mode == SDE_MODE_DPMS_LP2)) {
 			rc = dsi_panel_set_nolp(display->panel);
+#ifndef MI_DISP_LAYERS_SUPPORTED
+			/* 
+			 * Without mi layer additions (AOSP), we don't know when we leave aod,
+			 * so restore brightness on power on manually.
+			 */
+			dsi_panel_acquire_panel_lock(display->panel);
+			
+			dsi_panel_update_backlight(
+				display->panel,
+				display->panel->mi_cfg.last_bl_level);
+				
+			dsi_panel_release_panel_lock(display->panel);
+#endif
 			/* Because M1 exit AOD mode, the TE will be 120HZ */
 			if(mi_get_panel_id_by_dsi_panel(display->panel) == M1_PANEL_PA)
 				rc = dsi_panel_switch(display->panel);
