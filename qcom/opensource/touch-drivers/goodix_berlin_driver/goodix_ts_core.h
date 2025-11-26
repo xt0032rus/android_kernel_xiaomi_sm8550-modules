@@ -238,6 +238,18 @@ struct goodix_ic_info_misc { /* other data */
 	u16 stylus_rawdata_len;
 	u32 noise_data_addr;
 	u32 esd_addr;
+	u32 auto_scan_cmd_addr;
+	u32 auto_scan_info_addr;
+};
+
+struct goodix_ic_info_other {
+	u16 normalize_k_version;
+	u32 irrigation_data_addr;
+	u32 algo_debug_data_addr;
+	u16 algo_debug_data_len;
+	u32 update_sync_data_addr;
+	u16 screen_max_x;
+	u16 screen_max_y;
 };
 
 struct goodix_ic_info {
@@ -246,6 +258,7 @@ struct goodix_ic_info {
 	struct goodix_ic_info_feature feature;
 	struct goodix_ic_info_param parm;
 	struct goodix_ic_info_misc misc;
+	struct goodix_ic_info_other other;
 };
 #pragma pack()
 
@@ -289,6 +302,7 @@ struct goodix_module {
  * @invert_xy: invert x and y for inversely mounted IC
  * @pannel_key_map: key map
  * @fw_name: name of the firmware image
+ * @support_thp_fw: whether it is required to disable host touch processing and enable coord mode
  */
 struct goodix_ts_board_data {
 	char avdd_name[GOODIX_MAX_STR_LABLE_LEN];
@@ -309,6 +323,8 @@ struct goodix_ts_board_data {
 	bool pen_enable;
 	char fw_name[GOODIX_MAX_STR_LABLE_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABLE_LEN];
+
+	bool support_thp_fw;
 };
 
 enum goodix_fw_update_mode {

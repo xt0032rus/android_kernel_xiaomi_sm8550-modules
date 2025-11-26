@@ -1171,6 +1171,9 @@ static int goodix_parse_dt(struct device_node *node,
 	if (board_data->pen_enable)
 		ts_info("goodix pen enabled");
 
+	board_data->support_thp_fw = of_property_read_bool(node,
+					"goodix,support-thp-fw");
+
 	ts_debug("[DT]x:%d, y:%d, w:%d, p:%d", board_data->panel_max_x,
 		 board_data->panel_max_y, board_data->panel_max_w,
 		 board_data->panel_max_p);
@@ -1219,21 +1222,38 @@ static void goodix_ts_report_finger(struct input_dev *dev,
 		struct goodix_touch_data *touch_data,
 		bool invert_xy)
 {
+	struct goodix_ts_core *cd = input_get_drvdata(dev);
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
+	int resolution_factor;
 
 	mutex_lock(&dev->mutex);
 
 	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
 		if (touch_data->coords[i].status == TS_TOUCH) {
-			ts_debug("report: id[%d], x %d, y %d, w %d", i,
-				touch_data->coords[i].x,
-				touch_data->coords[i].y,
-				touch_data->coords[i].w);
+			/*
+				Make sure the Touch function works properly regardless of
+				whether the TouchIC firmware supports the super-resolution
+				scanning function
+			*/
+			if (cd->ic_info.other.screen_max_x > cd->board_data.panel_max_x) {
+				resolution_factor = cd->ic_info.other.screen_max_x / cd->board_data.panel_max_x;
+				touch_data->coords[i].x /= resolution_factor;
+				touch_data->coords[i].y /= resolution_factor;
+			} else {
+				resolution_factor = cd->board_data.panel_max_x / cd->ic_info.other.screen_max_x;
+				touch_data->coords[i].x *= resolution_factor;
+				touch_data->coords[i].y *= resolution_factor;
+			}
 
 			if (invert_xy)
 				swap(touch_data->coords[i].x,
 						touch_data->coords[i].y);
+
+			ts_debug("report: id[%d], x %d, y %d, w %d", i,
+				touch_data->coords[i].x,
+				touch_data->coords[i].y,
+				touch_data->coords[i].w);
 
 			input_mt_slot(dev, i);
 			input_mt_report_slot_state(dev, MT_TOOL_FINGER, true);
@@ -2382,6 +2402,11 @@ skip_to_stage2_init:
 		goto uninit_fw;
 	}
 	cd->init_stage = CORE_INIT_STAGE2;
+
+	if (cd->board_data.support_thp_fw) {
+		cd->hw_ops->set_coor_mode(cd);
+	}
+
 	mutex_unlock(&goodix_later_init_tmutex);
 	return 0;
 
